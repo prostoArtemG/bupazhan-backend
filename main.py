@@ -33,14 +33,9 @@ async def send_alert(text):
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def fetch_ohlcv_safe(pair, tf, limit=100):
     try:
-        exchange = ccxt.binance({
+        exchange = ccxt.bybit({  # Bybit вместо Binance — без гео-блока
             'rateLimit': 1200,
             'timeout': 30000,
-            'proxies': {  # Proxy для обхода блока Binance
-                'http': 'http://proxy-server:port',  # Замени на твой proxy (бесплатный: free-proxy-list.net)
-                'https': 'http://proxy-server:port',
-            },
-            'options': {'adjustForTimeDifference': True},
         })
         print(f"Fetching {pair} {tf} limit {limit}...")
         return exchange.fetch_ohlcv(pair, tf, limit=limit)
@@ -51,10 +46,6 @@ def fetch_ohlcv_safe(pair, tf, limit=100):
 async def scan_fvg_ema(pair='BTC/USDT', tf='15m'):
     try:
         ohlcv = fetch_ohlcv_safe(pair, tf, limit=100)
-        if not ohlcv:
-            print(f"Fallback data for {pair}")
-            # Fallback тестовые данные
-            ohlcv = [[int(time.time()*1000), 10000, 10100, 9900, 10050, 1000] for _ in range(100)]
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['ema20'] = EMAIndicator(df['close'], window=20).ema_indicator()
         
@@ -96,9 +87,6 @@ async def scan_fvg_ema(pair='BTC/USDT', tf='15m'):
 async def calculate_last_imb(pair, tf='15m'):
     try:
         ohlcv = fetch_ohlcv_safe(pair, tf, limit=500)
-        if not ohlcv:
-            print(f"Fallback for IMB {pair} {tf}")
-            return {"type": None, "size_pct": 0, "time_since": "—", "status": "—"}
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         
         imb_zones = []
