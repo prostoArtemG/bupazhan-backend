@@ -6,6 +6,7 @@ import pandas as pd
 from telegram import Bot
 import asyncio
 from datetime import datetime, timedelta
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 app = FastAPI()
 
@@ -29,13 +30,19 @@ async def send_alert(text):
     except Exception as e:
         print(f"Ошибка алерта в TG: {e}")
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+def fetch_ohlcv_safe(pair, tf, limit=100):
+    try:
+        exchange = ccxt.binance({'rateLimit': 1200, 'timeout': 30000})
+        print(f"Fetching {pair} {tf} limit {limit}...")
+        return exchange.fetch_ohlcv(pair, tf, limit=limit)
+    except Exception as e:
+        print(f"Retry fetch {pair} {tf}: {e}")
+        raise e
+
 async def scan_fvg_ema(pair='BTC/USDT', tf='15m'):
     try:
-        exchange = ccxt.binance({
-            'rateLimit': 1200,
-            'timeout': 30000,
-        })
-        ohlcv = exchange.fetch_ohlcv(pair, tf, limit=100)
+        ohlcv = fetch_ohlcv_safe(pair, tf, limit=100)
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['ema20'] = EMAIndicator(df['close'], window=20).ema_indicator()
         
@@ -76,11 +83,7 @@ async def scan_fvg_ema(pair='BTC/USDT', tf='15m'):
 
 async def calculate_last_imb(pair, tf='15m'):
     try:
-        exchange = ccxt.binance({
-            'rateLimit': 1200,
-            'timeout': 30000,
-        })
-        ohlcv = exchange.fetch_ohlcv(pair, tf, limit=500)
+        ohlcv = fetch_ohlcv_safe(pair, tf, limit=500)
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         
         imb_zones = []
